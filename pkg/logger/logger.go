@@ -51,21 +51,17 @@ func (f *CleanTextFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	delete(entry.Data, "caller")
 	delete(entry.Data, "service")
 
-	var dataStr string
+	var sb strings.Builder
 	if len(entry.Data) > 0 {
-		if val, ok := entry.Data["error"]; ok && val != nil {
-			dataStr += fmt.Sprintf("[err: %v] ", val)
-		}
-		if val, ok := entry.Data["trace_id"]; ok && val != nil {
-			dataStr += fmt.Sprintf("[trace_id: %s] ", val)
-		}
-		if val, ok := entry.Data["data"]; ok {
-			dataStr += fmt.Sprintf("[data: %s] ", utils.Stringify(val))
+		for key, val := range entry.Data {
+			_, err := fmt.Fprintf(&sb, "[%s: %s] ", key, utils.Stringify(val))
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	body := fmt.Sprintf("\033[%dm[%s] \033[0m %s %s\n", levelColor, level, entry.Message, dataStr)
-
+	body := fmt.Sprintf("\033[%dm[%s] \033[0m %s %s\n", levelColor, level, entry.Message, sb.String())
 	return []byte(header + body), nil
 }
 

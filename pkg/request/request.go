@@ -3,7 +3,7 @@ package request
 import (
 	"fmt"
 
-	"github.com/alkuinvito/ai-assistant/pkg/apperror"
+	"github.com/alkuinvito/ai-assistant/pkg/service_error"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
 )
@@ -32,11 +32,11 @@ func ValidateRequest[T any](c fiber.Ctx, v T) error {
 		if validationErrors, ok := err.(validator.ValidationErrors); ok {
 			for _, e := range validationErrors {
 				errInstance := fmt.Errorf("%s", e.Error())
-				return apperror.NewUnprocessableEntity(c, fmt.Sprintf("Field validation for '%s' failed on the '%s' tag", e.Field(), e.Tag()), errInstance)
+				return service_error.NewUnprocessableEntity(c, fmt.Sprintf("field validation for '%s' failed on the '%s' tag", e.Field(), e.Tag()), errInstance)
 			}
 		}
 
-		return apperror.NewUnprocessableEntity(c, "invalid request body", err)
+		return service_error.NewUnprocessableEntity(c, "invalid request body", err)
 	}
 
 	return nil

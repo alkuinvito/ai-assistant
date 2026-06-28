@@ -8,6 +8,7 @@ import (
 	"github.com/alkuinvito/ai-assistant/internal/routers"
 	"github.com/alkuinvito/ai-assistant/pkg/logger"
 	"github.com/gofiber/fiber/v3"
+	"github.com/joho/godotenv"
 )
 
 func NewApp(router *routers.Router) *fiber.App {
@@ -15,6 +16,7 @@ func NewApp(router *routers.Router) *fiber.App {
 }
 
 func main() {
+	godotenv.Load()
 	log := logger.NewLogger()
 
 	app, cleanup, err := NewHttpServer(log)
@@ -49,5 +51,5 @@ func main() {
 		log.Fatal("forced shutdown", err)
 	}
 
-	log.Info("server exited cleanly")
+	log.Info("server exited gracefully")
 }

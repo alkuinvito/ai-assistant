@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+
+	"github.com/gofiber/fiber/v3"
 )
 
 // Stringify converts any value to a string
@@ -26,16 +28,27 @@ func Stringify(v any) string {
 	}
 }
 
-var TraceIDKey = "trace_id"
-
-// GetTraceID returns the trace ID from the context
-func GetTraceID(ctx context.Context) string {
+// GetRequestID returns the request ID from the context
+func GetRequestID(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
 
-	if val, ok := ctx.Value("trace_id").(string); ok {
+	if val, ok := ctx.Value("request_id").(string); ok {
 		return val
+	}
+
+	return ""
+}
+
+// GetIp returns the IP address from the fiber context
+func GetIp(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+
+	if c, ok := ctx.(fiber.Ctx); ok {
+		return c.IP()
 	}
 
 	return ""

@@ -3,14 +3,14 @@ package response
 import (
 	"errors"
 
-	"github.com/alkuinvito/ai-assistant/pkg/apperror"
 	"github.com/alkuinvito/ai-assistant/pkg/request"
+	"github.com/alkuinvito/ai-assistant/pkg/service_error"
 	"github.com/gofiber/fiber/v3"
 )
 
 type ErrorResponse struct {
 	Message string `json:"message"`
-	Details any    `json:"details"`
+	// Details any    `json:"details"`
 }
 
 type Meta struct {
@@ -34,9 +34,7 @@ func New[T any](data T) *Response[T] {
 }
 
 func NewError(err error) *Response[any] {
-	resp := &Response[any]{
-		status: fiber.StatusInternalServerError,
-	}
+	resp := &Response[any]{}
 	return resp.WithError(err)
 }
 
@@ -45,7 +43,7 @@ func (r *Response[T]) WithError(err error) *Response[T] {
 		return r
 	}
 
-	var appError *apperror.AppError
+	var appError *service_error.ServiceError
 	if errors.As(err, &appError) {
 		r.status = appError.StatusCode()
 		r.Error = &ErrorResponse{
@@ -72,8 +70,4 @@ func (r *Response[T]) WithPagination(params *request.RequestParams, totalCount i
 		Limit: params.Limit,
 	}
 	return r
-}
-
-func (r *Response[T]) JSON(c fiber.Ctx) error {
-	return c.Status(r.status).JSON(r)
 }

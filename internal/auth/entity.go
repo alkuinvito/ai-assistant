@@ -1,8 +1,8 @@
 package auth
 
 type DTOLoginRequest struct {
-	Email    string `json:"email" validate:"required"`
-	Password string `json:"password" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8,max=32"`
 }
 
 type DTOAuthResponse struct {
@@ -12,7 +12,19 @@ type DTOAuthResponse struct {
 }
 
 type DTORegisterRequest struct {
-	Email    string `json:"email" validate:"required"`
-	Password string `json:"password" validate:"required"`
-	Name     string `json:"name" validate:"required"`
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8,max=32"`
+	Name     string `json:"name" validate:"required,min=3,max=32"`
+}
+
+type DTOSendVerificationRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+type DTOVerifyEmailRequest struct {
+	Token string `json:"token" validate:"required"`
+}
+
+type DTOMessageResponse struct {
+	Message string `json:"message"`
 }

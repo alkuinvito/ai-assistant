@@ -9,6 +9,7 @@ type UserService interface {
 	CreateUser(tx *gorm.DB, user *User) error
 	GetUserByEmail(tx *gorm.DB, email string) (*User, error)
 	GetUserById(tx *gorm.DB, id uuid.UUID) (*User, error)
+	VerifyUserEmail(tx *gorm.DB, email string) error
 }
 
 type userService struct {
@@ -30,4 +31,14 @@ func (s *userService) GetUserById(tx *gorm.DB, id uuid.UUID) (*User, error) {
 
 func (s *userService) GetUserByEmail(tx *gorm.DB, email string) (*User, error) {
 	return s.repo.getByEmail(tx, email)
+}
+
+func (s *userService) VerifyUserEmail(tx *gorm.DB, email string) error {
+	user, err := s.repo.getByEmail(tx, email)
+	if err != nil {
+		return err
+	}
+
+	user.IsVerified = true
+	return s.repo.update(tx, user)
 }

@@ -9,6 +9,8 @@ import (
 type AuthHandler interface {
 	Login(c fiber.Ctx) error
 	Register(c fiber.Ctx) error
+	SendVerification(c fiber.Ctx) error
+	VerifyEmail(c fiber.Ctx) error
 }
 
 type authHandler struct {
@@ -30,7 +32,7 @@ func (h *authHandler) Login(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.New(data).JSON(c)
+	return c.JSON(response.New(data))
 }
 
 func (h *authHandler) Register(c fiber.Ctx) error {
@@ -44,5 +46,31 @@ func (h *authHandler) Register(c fiber.Ctx) error {
 		return err
 	}
 
-	return response.New("User registered successfully").JSON(c)
+	return c.JSON(response.New("user registered successfully"))
+}
+
+func (h *authHandler) SendVerification(c fiber.Ctx) error {
+	req := new(DTOSendVerificationRequest)
+	if err := request.ValidateRequest(c, req); err != nil {
+		return err
+	}
+
+	if err := h.service.GenerateAndSendVerificationToken(c, req.Email); err != nil {
+		return err
+	}
+
+	return c.JSON(response.New("verification email sent"))
+}
+
+func (h *authHandler) VerifyEmail(c fiber.Ctx) error {
+	req := new(DTOVerifyEmailRequest)
+	if err := request.ValidateRequest(c, req); err != nil {
+		return err
+	}
+
+	if err := h.service.VerifyEmail(c, req); err != nil {
+		return err
+	}
+
+	return c.JSON(response.New("email verified successfully"))
 }

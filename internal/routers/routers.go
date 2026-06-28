@@ -2,40 +2,37 @@ package routers
 
 import (
 	"errors"
-	"time"
 
 	"github.com/alkuinvito/ai-assistant/internal/auth"
 	"github.com/alkuinvito/ai-assistant/internal/middlewares"
 	"github.com/alkuinvito/ai-assistant/internal/users"
-	"github.com/alkuinvito/ai-assistant/pkg/apperror"
 	"github.com/alkuinvito/ai-assistant/pkg/response"
-	"github.com/alkuinvito/ai-assistant/pkg/utils"
+	"github.com/alkuinvito/ai-assistant/pkg/service_error"
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
-	"github.com/gofiber/fiber/v3/middleware/logger"
 	recoverer "github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/sirupsen/logrus"
 )
 
 type Router struct {
-	log        *logrus.Logger
-	middleware middlewares.Middleware
-	userRouter users.UserRouter
-	authRouter auth.AuthRouter
+	log         *logrus.Logger
+	middlewares middlewares.Middleware
+	userRouter  users.UserRouter
+	authRouter  auth.AuthRouter
 }
 
 func NewRouter(
 	log *logrus.Logger,
-	middleware middlewares.Middleware,
+	middlewares middlewares.Middleware,
 	userRouter users.UserRouter,
 	authRouter auth.AuthRouter,
 ) *Router {
 	return &Router{
-		log:        log,
-		middleware: middleware,
-		userRouter: userRouter,
-		authRouter: authRouter,
+		log:         log,
+		middlewares: middlewares,
+		userRouter:  userRouter,
+		authRouter:  authRouter,
 	}
 }
 
@@ -52,11 +49,11 @@ func (r *Router) Handle() *fiber.App {
 		ErrorHandler: func(c fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 
-			var appError *apperror.AppError
+			var appError *service_error.ServiceError
 			if errors.As(err, &appError) {
 				code = appError.StatusCode()
 			} else {
-				appError = apperror.NewInternalServerError(c.Context(), "Unknown server error", err)
+				appError = service_error.NewInternalServerError(c.Context(), "unknown server error", err)
 			}
 
 			return c.Status(code).JSON(response.NewError(appError))
@@ -66,37 +63,14 @@ func (r *Router) Handle() *fiber.App {
 
 	// Middlewares
 	app.Use(cors.New())
-	app.Use(r.middleware.TraceIDMiddleware())
-	app.Use(logger.New(logger.Config{
-		LoggerFunc: func(c fiber.Ctx, data *logger.Data, cfg *logger.Config) error {
-			traceId := utils.GetTraceID(c)
-
-			// Safely read response metadata
-			statusCode := c.Response().StatusCode()
-			latency := time.Since(data.Start)
-
-			if statusCode >= 400 {
-				r.log.WithFields(logrus.Fields{
-					"trace_id": traceId,
-					"data": map[string]any{
-						"latency": latency.String(),
-						"ip":      c.IP(),
-					},
-				}).Errorf("%d | %s %s", statusCode, c.Method(), c.Path())
-			} else {
-				r.log.WithFields(logrus.Fields{
-					"trace_id": traceId,
-					"data": map[string]any{
-						"latency": latency.String(),
-						"ip":      c.IP(),
-					},
-				}).Infof("%d | %s %s", statusCode, c.Method(), c.Path())
-			}
-
-			return nil
-		},
-	}))
+	app.Use(r.middlewares.RequestId())
+	app.Use(r.middlewares.Logger())
 	app.Use(recoverer.New())
+
+	// Health check
+	app.Get("/health", func(c fiber.Ctx) error {
+		return c.JSON(response.New("ok"))
+	})
 
 	// Routes
 	api := app.Group("/api")

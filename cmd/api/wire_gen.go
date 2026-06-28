@@ -11,7 +11,9 @@ import (
 	"github.com/alkuinvito/ai-assistant/internal/middlewares"
 	"github.com/alkuinvito/ai-assistant/internal/routers"
 	"github.com/alkuinvito/ai-assistant/internal/users"
+	"github.com/alkuinvito/ai-assistant/pkg/cache"
 	"github.com/alkuinvito/ai-assistant/pkg/database"
+	"github.com/alkuinvito/ai-assistant/pkg/mailer"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/wire"
 	"github.com/sirupsen/logrus"
@@ -20,7 +22,7 @@ import (
 // Injectors from wire.go:
 
 func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
-	middleware := middlewares.NewMiddleware()
+	middleware := middlewares.NewMiddleware(log)
 	db, cleanup, err := database.NewDatabase(log)
 	if err != nil {
 		return nil, nil, err
@@ -29,12 +31,16 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 	userService := users.NewUserService(db, userRepository)
 	userHandler := users.NewUserHandler(userService)
 	userRouter := users.NewUserRouter(userHandler)
-	authService := auth.NewAuthService(db, userService)
+	cacheCache, cleanup2 := cache.NewRedisCache(log)
+	mailerMailer, cleanup3 := mailer.NewSmtpMail(log)
+	authService := auth.NewAuthService(cacheCache, db, mailerMailer, userService)
 	authHandler := auth.NewAuthHandler(authService)
 	authRouter := auth.NewAuthRouter(authHandler)
 	router := routers.NewRouter(log, middleware, userRouter, authRouter)
 	app := NewApp(router)
 	return app, func() {
+		cleanup3()
+		cleanup2()
 		cleanup()
 	}, nil
 }
