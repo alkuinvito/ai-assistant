@@ -46,21 +46,20 @@ func (m *middleware) Logger() fiber.Handler {
 			statusCode := c.Response().StatusCode()
 			latency := time.Since(data.Start)
 
-			if statusCode >= 400 {
+			if statusCode >= 500 {
 				m.logger.WithFields(logrus.Fields{
-					"req_id": requestId,
-					"data": map[string]any{
-						"latency": latency.String(),
-						"ip":      c.IP(),
-					},
+					"req_id":   requestId,
+					"duration": latency.Microseconds(),
 				}).Errorf("%d | %s %s", statusCode, c.Method(), c.Path())
+			} else if statusCode >= 400 {
+				m.logger.WithFields(logrus.Fields{
+					"req_id":   requestId,
+					"duration": latency.Microseconds(),
+				}).Warnf("%d | %s %s", statusCode, c.Method(), c.Path())
 			} else {
 				m.logger.WithFields(logrus.Fields{
-					"req_id": requestId,
-					"data": map[string]any{
-						"latency": latency.String(),
-						"ip":      c.IP(),
-					},
+					"req_id":   requestId,
+					"duration": latency.Microseconds(),
 				}).Infof("%d | %s %s", statusCode, c.Method(), c.Path())
 			}
 
