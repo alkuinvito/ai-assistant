@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"strconv"
 	"time"
@@ -29,8 +30,8 @@ const VERIFICATION_TOKEN_TTL = 5 * time.Minute
 type AuthService interface {
 	comparePassword(password, hash string) error
 	GenerateAndSendVerificationToken(ctx context.Context, email string) error
+	generateOTP() (string, error)
 	generateTokenPair(userId string) (*DTOAuthResponse, error)
-	generateVerificationToken() (string, error)
 	hashPassword(password string) (string, error)
 	Login(ctx context.Context, req *DTOLoginRequest) (*DTOAuthResponse, error)
 	Register(ctx context.Context, req *DTORegisterRequest) error
@@ -88,13 +89,13 @@ func (s *authService) GenerateAndSendVerificationToken(ctx context.Context, emai
 		return service_error.NewBadRequest(ctx, "user is already verified", nil)
 	}
 
-	token, err := s.generateVerificationToken()
+	token, err := s.generateOTP()
 	if err != nil {
 		return service_error.NewInternalServerError(ctx, "failed to generate verification token", err)
 	}
 
-	cacheKey := fmt.Sprintf("email_verification:%s", token)
-	if err := s.cache.Set(ctx, cacheKey, email, VERIFICATION_TOKEN_TTL); err != nil {
+	cacheKey := fmt.Sprintf("email_verification:%s", email)
+	if err := s.cache.Set(ctx, cacheKey, token, VERIFICATION_TOKEN_TTL); err != nil {
 		return service_error.NewInternalServerError(ctx, "failed to store verification token", err)
 	}
 
@@ -107,6 +108,19 @@ func (s *authService) GenerateAndSendVerificationToken(ctx context.Context, emai
 	}
 
 	return nil
+}
+
+func (s *authService) generateOTP() (string, error) {
+	max := big.NewInt(999000)
+
+	n, err := rand.Int(rand.Reader, max)
+	if err != nil {
+		return "", err
+	}
+
+	finalNum := n.Int64() + 1000
+
+	return fmt.Sprintf("%06d", finalNum), nil
 }
 
 func (s *authService) generateTokenPair(userId string) (*DTOAuthResponse, error) {
@@ -165,14 +179,6 @@ func (s *authService) generateTokenPair(userId string) (*DTOAuthResponse, error)
 		RefreshToken: refreshToken,
 		ExpiresIn:    ACCESS_TOKEN_EXPIRES_IN,
 	}, nil
-}
-
-func (s *authService) generateVerificationToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x", b), nil
 }
 
 func (s *authService) hashPassword(password string) (string, error) {
@@ -269,16 +275,15 @@ func (s *authService) Register(ctx context.Context, req *DTORegisterRequest) err
 
 func (s *authService) sendEmailVerification(ctx context.Context, email, token string) error {
 	subject := "Verify your email address"
-	verificationLink := fmt.Sprintf("%s/auth/verify?token=%s", os.Getenv("APP_HOST"), token)
 
 	template := fmt.Sprintf(`<body style="margin:0;padding:32px 16px;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
 		<table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr><td align="center">
 		<table role="presentation" cellpadding="0" cellspacing="0" style="max-width:440px;width:100%%;background:#fff;border-radius:8px">
 		<tr><td style="padding:32px 24px">
 		<h1 style="margin:0 0 8px;font-size:20px;color:#1a1a2e">Verify your email</h1>
-		<p style="margin:0 0 20px;font-size:14px;color:#5a6170;line-height:1.5">Click the button below to confirm your email. This link expires in 5 minutes.</p>
-		<table role="presentation" cellpadding="0" cellspacing="0"><tr><td>
-		<a href="%s" style="display:inline-block;padding:11px 24px;background:#2563eb;color:#fff;font-size:14px;font-weight:600;text-decoration:none;border-radius:6px">Verify Email</a>
+		<p style="margin:0 0 16px;font-size:14px;color:#6b7280">Please use the following verification code to verify your email address:</p>
+		<p style="margin:0 0 16px;font-size:24px;font-weight:bold;color:#1a1a2e">%s</p>
+		<p style="margin:0 0 16px;font-size:14px;color:#6b7280">This code will expire in %d minutes.</p>
 		</td></tr></table>
 		</td></tr>
 		<tr><td style="padding:16px 24px;border-top:1px solid #e5e7eb">
@@ -286,7 +291,7 @@ func (s *authService) sendEmailVerification(ctx context.Context, email, token st
 		</td></tr>
 		</table>
 		</td></tr></table>
-		</body>`, verificationLink)
+		</body>`, token, int(VERIFICATION_TOKEN_TTL.Minutes()))
 
 	err := s.mailer.Send(ctx, email, subject, template)
 	if err != nil {
@@ -299,14 +304,18 @@ func (s *authService) sendEmailVerification(ctx context.Context, email, token st
 func (s *authService) VerifyEmail(ctx context.Context, req *DTOVerifyEmailRequest) error {
 	db := s.db.WithContext(ctx)
 
-	cacheKey := fmt.Sprintf("email_verification:%s", req.Token)
-	email, err := s.cache.Get(ctx, cacheKey)
+	cacheKey := fmt.Sprintf("email_verification:%s", req.Email)
+	token, err := s.cache.Get(ctx, cacheKey)
 	if err != nil {
 		return service_error.NewUnauthorized(ctx, "invalid or expired verification token", err)
 	}
 
+	if req.Token != token {
+		return service_error.NewUnauthorized(ctx, "invalid or expired verification token", nil)
+	}
+
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := s.userService.VerifyUserEmail(tx, email); err != nil {
+		if err := s.userService.VerifyUserEmail(tx, req.Email); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return service_error.NewUnauthorized(ctx, "invalid or expired verification token", err)
 			}

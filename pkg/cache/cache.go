@@ -24,7 +24,8 @@ type RedisCache struct {
 
 func NewRedisCache(logger *logrus.Logger) (Cache, func()) {
 	client := redis.NewClient(&redis.Options{
-		Addr: os.Getenv("REDIS_URL"),
+		Addr:     os.Getenv("REDIS_URL"),
+		Password: os.Getenv("REDIS_PASSWORD"),
 	})
 
 	cleanup := func() {

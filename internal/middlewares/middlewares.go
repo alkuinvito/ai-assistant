@@ -29,7 +29,7 @@ const HeaderRequestID = "X-Request-ID"
 
 // generateRandomID creates a secure, random hexadecimal string
 func generateRandomID() string {
-	bytes := make([]byte, 16)
+	bytes := make([]byte, 8)
 	if _, err := rand.Read(bytes); err != nil {
 		// Fallback to timestamp string if crypto/rand fails
 		return fmt.Sprintf("req_%d", time.Now().UnixNano())

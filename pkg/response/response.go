@@ -3,7 +3,6 @@ package response
 import (
 	"errors"
 
-	"github.com/alkuinvito/ai-assistant/pkg/request"
 	"github.com/alkuinvito/ai-assistant/pkg/service_error"
 	"github.com/gofiber/fiber/v3"
 )
@@ -19,55 +18,48 @@ type Meta struct {
 	Limit int   `json:"limit"`
 }
 
-type Response[T any] struct {
-	Data   T              `json:"data"`
+type Response struct {
+	ReqId  string         `json:"req_id,omitempty"`
+	Data   any            `json:"data"`
 	Error  *ErrorResponse `json:"error,omitempty"`
 	Meta   *Meta          `json:"meta,omitempty"`
 	status int            `json:"-"`
 }
 
-func New[T any](data T) *Response[T] {
-	return &Response[T]{
+func New(c fiber.Ctx, data any, meta ...*Meta) error {
+	res := &Response{
 		status: fiber.StatusOK,
-		Data:   data,
-	}
-}
-
-func NewError(err error) *Response[any] {
-	resp := &Response[any]{}
-	return resp.WithError(err)
-}
-
-func (r *Response[T]) WithError(err error) *Response[T] {
-	if err == nil {
-		return r
 	}
 
-	var appError *service_error.ServiceError
-	if errors.As(err, &appError) {
-		r.status = appError.StatusCode()
-		r.Error = &ErrorResponse{
-			Message: appError.Error(),
+	for _, m := range meta {
+		res.Meta = m
+	}
+
+	if err, ok := data.(error); ok {
+		// Include the request ID in the response for better traceability
+		res.ReqId = c.Locals("request_id").(string)
+
+		// Parse custom service errors and set the appropriate HTTP status code
+		var appError *service_error.ServiceError
+		if errors.As(err, &appError) {
+			res.status = appError.StatusCode()
+			res.Error = &ErrorResponse{
+				Message: appError.Error(),
+			}
+		} else {
+			res.status = fiber.StatusInternalServerError
+			res.Error = &ErrorResponse{
+				Message: err.Error(),
+			}
 		}
-	} else {
-		r.status = fiber.StatusInternalServerError
-		r.Error = &ErrorResponse{
-			Message: err.Error(),
-		}
+
+		return res.toJSON(c)
 	}
-	return r
+
+	res.Data = data
+	return res.toJSON(c)
 }
 
-func (r *Response[T]) WithMeta(meta *Meta) *Response[T] {
-	r.Meta = meta
-	return r
-}
-
-func (r *Response[T]) WithPagination(params *request.RequestParams, totalCount int64) *Response[T] {
-	r.Meta = &Meta{
-		Total: totalCount,
-		Page:  params.Page,
-		Limit: params.Limit,
-	}
-	return r
+func (r *Response) toJSON(c fiber.Ctx) error {
+	return c.Status(r.status).JSON(r)
 }

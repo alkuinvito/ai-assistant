@@ -4,7 +4,14 @@ import (
 	"github.com/alkuinvito/ai-assistant/internal/users"
 	"github.com/alkuinvito/ai-assistant/pkg/database"
 	"github.com/alkuinvito/ai-assistant/pkg/logger"
+	"github.com/joho/godotenv"
 )
+
+func init() {
+	if err := godotenv.Load(); err != nil {
+		panic(err)
+	}
+}
 
 func main() {
 	log := logger.NewLogger()

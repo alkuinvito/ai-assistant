@@ -45,7 +45,7 @@ func NewSmtpMail(logger *logrus.Logger) (Mailer, func()) {
 	}
 
 	tlsconfig := &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: false,
 		ServerName:         config.Host,
 	}
 

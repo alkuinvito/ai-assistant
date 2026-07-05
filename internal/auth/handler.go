@@ -32,7 +32,7 @@ func (h *authHandler) Login(c fiber.Ctx) error {
 		return err
 	}
 
-	return c.JSON(response.New(data))
+	return response.New(c, data)
 }
 
 func (h *authHandler) Register(c fiber.Ctx) error {
@@ -46,7 +46,7 @@ func (h *authHandler) Register(c fiber.Ctx) error {
 		return err
 	}
 
-	return c.JSON(response.New("user registered successfully"))
+	return response.New(c, "user registered successfully")
 }
 
 func (h *authHandler) SendVerification(c fiber.Ctx) error {
@@ -59,7 +59,7 @@ func (h *authHandler) SendVerification(c fiber.Ctx) error {
 		return err
 	}
 
-	return c.JSON(response.New("verification email sent"))
+	return response.New(c, "verification email sent")
 }
 
 func (h *authHandler) VerifyEmail(c fiber.Ctx) error {
@@ -72,5 +72,5 @@ func (h *authHandler) VerifyEmail(c fiber.Ctx) error {
 		return err
 	}
 
-	return c.JSON(response.New("email verified successfully"))
+	return response.New(c, "email verified successfully")
 }

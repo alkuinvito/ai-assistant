@@ -47,16 +47,12 @@ func (v *structValidator) Validate(out any) error {
 func (r *Router) Handle() *fiber.App {
 	app := fiber.New(fiber.Config{
 		ErrorHandler: func(c fiber.Ctx, err error) error {
-			code := fiber.StatusInternalServerError
-
 			var appError *service_error.ServiceError
-			if errors.As(err, &appError) {
-				code = appError.StatusCode()
-			} else {
-				appError = service_error.NewInternalServerError(c.Context(), "unknown server error", err)
+			if !errors.As(err, &appError) {
+				appError = service_error.NewInternalServerError(c, "unknown server error", err)
 			}
 
-			return c.Status(code).JSON(response.NewError(appError))
+			return response.New(c, appError)
 		},
 		StructValidator: &structValidator{validate: validator.New()},
 	})
@@ -69,7 +65,7 @@ func (r *Router) Handle() *fiber.App {
 
 	// Health check
 	app.Get("/health", func(c fiber.Ctx) error {
-		return c.JSON(response.New("ok"))
+		return response.New(c, "ok")
 	})
 
 	// Routes
