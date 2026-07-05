@@ -1,8 +1,11 @@
 package auth
 
 import (
+	"os"
+
 	"github.com/alkuinvito/ai-assistant/pkg/request"
 	"github.com/alkuinvito/ai-assistant/pkg/response"
+	"github.com/alkuinvito/ai-assistant/pkg/service_error"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -30,6 +33,25 @@ func (h *authHandler) Login(c fiber.Ctx) error {
 	data, err := h.service.Login(c, req)
 	if err != nil {
 		return err
+	}
+
+	clientType, ok := c.Value("client_type").(string)
+	if !ok || clientType == "" {
+		return service_error.NewUnauthorized(c, "invalid client type", err)
+	}
+
+	if clientType == "web" {
+		c.Cookie(&fiber.Cookie{
+			Name:     "aa.refresh_token",
+			Value:    data.RefreshToken,
+			SameSite: fiber.CookieSameSiteLaxMode,
+			MaxAge:   h.service.GetRefreshTokenExpiresIn(),
+			HTTPOnly: true,
+			Secure:   os.Getenv("APP_ENV") != "development",
+			Path:     "/api/auth/refresh",
+		})
+
+		data.RefreshToken = ""
 	}
 
 	return response.New(c, data)

@@ -34,10 +34,13 @@ type AuthService interface {
 	GenerateAndSendVerificationToken(ctx context.Context, email string) error
 	generateOTP() (string, error)
 	generateTokenPair(userId string) (*DTOAuthResponse, error)
+	GetAccessTokenExpiresIn() int
+	GetRefreshTokenExpiresIn() int
 	hashPassword(password string) (string, error)
 	Login(ctx context.Context, req *DTOLoginRequest) (*DTOAuthResponse, error)
 	Register(ctx context.Context, req *DTORegisterRequest) error
 	sendEmailVerification(ctx context.Context, email, token string) error
+	VerifyAccessToken(tokenString string) (jwt.Claims, error)
 	VerifyEmail(ctx context.Context, req *DTOVerifyEmailRequest) error
 }
 
@@ -185,6 +188,14 @@ func (s *authService) generateTokenPair(userId string) (*DTOAuthResponse, error)
 	}, nil
 }
 
+func (s *authService) GetAccessTokenExpiresIn() int {
+	return ACCESS_TOKEN_EXPIRES_IN
+}
+
+func (s *authService) GetRefreshTokenExpiresIn() int {
+	return REFRESH_TOKEN_EXPIRES_IN
+}
+
 func (s *authService) hashPassword(password string) (string, error) {
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -195,7 +206,9 @@ func (s *authService) hashPassword(password string) (string, error) {
 
 func (s *authService) Login(ctx context.Context, req *DTOLoginRequest) (*DTOAuthResponse, error) {
 	db := s.db.WithContext(ctx)
-	loginAttemptsKey := fmt.Sprintf("login_attempts:%s", utils.GetIp(ctx))
+
+	hashedIp := hash.HashString(utils.GetIp(ctx))
+	loginAttemptsKey := fmt.Sprintf("login_attempts:%s", hashedIp)
 
 	if attempts, _ := s.cache.Get(ctx, loginAttemptsKey); attempts != "" {
 		n, _ := strconv.Atoi(attempts)
@@ -309,6 +322,46 @@ func (s *authService) sendEmailVerification(ctx context.Context, email, token st
 	}
 
 	return nil
+}
+
+func (s *authService) VerifyAccessToken(tokenString string) (jwt.Claims, error) {
+	key := os.Getenv("JWT_PUBLIC_KEY")
+	issuer := os.Getenv("JWT_ISSUER")
+
+	if key == "" {
+		return nil, errors.New("JWT_PUBLIC_KEY environment variable not set")
+	}
+
+	if issuer == "" {
+		return nil, errors.New("JWT_ISSUER environment variable not set")
+	}
+
+	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
+		publicKey, err := jwt.ParseECPublicKeyFromPEM([]byte(key))
+		if err != nil {
+			return nil, err
+		}
+		return publicKey, nil
+	})
+	if err != nil {
+		return nil, errors.New("failed to parse token string")
+	}
+
+	tokenType, ok := token.Header["typ"].(string)
+	if !ok {
+		return nil, errors.New("invalid token type")
+	}
+
+	if tokenType != "at+jwt" {
+		return nil, errors.New("invalid token type")
+	}
+
+	iss, err := token.Claims.GetIssuer()
+	if err != nil || iss != issuer {
+		return nil, errors.New("incorrect token issuer")
+	}
+
+	return token.Claims, nil
 }
 
 func (s *authService) VerifyEmail(ctx context.Context, req *DTOVerifyEmailRequest) error {

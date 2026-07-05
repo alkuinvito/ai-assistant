@@ -70,8 +70,12 @@ func (r *Router) Handle() *fiber.App {
 
 	// Routes
 	api := app.Group("/api")
+	api.Use(r.middlewares.ClientId())
 	r.authRouter.Handle(api)
-	r.userRouter.Handle(api)
+
+	// JWT authenticated only
+	authGuard := api.Use(r.middlewares.JWTAuthentication())
+	r.userRouter.Handle(authGuard)
 
 	return app
 }

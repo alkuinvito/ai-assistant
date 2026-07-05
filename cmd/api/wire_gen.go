@@ -22,18 +22,19 @@ import (
 // Injectors from wire.go:
 
 func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
-	middleware := middlewares.NewMiddleware(log)
-	db, cleanup, err := database.NewDatabase(log)
+	cacheCache, cleanup := cache.NewRedisCache(log)
+	db, cleanup2, err := database.NewDatabase(log)
 	if err != nil {
+		cleanup()
 		return nil, nil, err
 	}
+	mailerMailer, cleanup3 := mailer.NewSmtpMail(log)
 	userRepository := users.NewUserRepository()
 	userService := users.NewUserService(db, userRepository)
+	authService := auth.NewAuthService(cacheCache, db, mailerMailer, userService)
+	middleware := middlewares.NewMiddleware(log, authService)
 	userHandler := users.NewUserHandler(userService)
 	userRouter := users.NewUserRouter(userHandler)
-	cacheCache, cleanup2 := cache.NewRedisCache(log)
-	mailerMailer, cleanup3 := mailer.NewSmtpMail(log)
-	authService := auth.NewAuthService(cacheCache, db, mailerMailer, userService)
 	authHandler := auth.NewAuthHandler(authService)
 	authRouter := auth.NewAuthRouter(authHandler)
 	router := routers.NewRouter(log, middleware, userRouter, authRouter)
