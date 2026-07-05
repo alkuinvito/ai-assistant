@@ -11,12 +11,17 @@ import (
 	"github.com/joho/godotenv"
 )
 
+func init() {
+	if err := godotenv.Load(); err != nil {
+		panic(err)
+	}
+}
+
 func NewApp(router *routers.Router) *fiber.App {
 	return router.Handle()
 }
 
 func main() {
-	godotenv.Load()
 	log := logger.NewLogger()
 
 	app, cleanup, err := NewHttpServer(log)

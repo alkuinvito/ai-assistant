@@ -40,7 +40,7 @@ func (r *userRepository) getById(db *gorm.DB, id uuid.UUID) (*User, error) {
 func (r *userRepository) getByEmail(db *gorm.DB, email string) (*User, error) {
 	var result *User
 
-	err := db.First(&result, "email = ?", email).Error
+	err := db.First(&result, "email_hash = ?", email).Error
 	if err != nil {
 		return nil, err
 	}

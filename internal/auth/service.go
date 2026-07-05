@@ -12,6 +12,8 @@ import (
 
 	"github.com/alkuinvito/ai-assistant/internal/users"
 	"github.com/alkuinvito/ai-assistant/pkg/cache"
+	"github.com/alkuinvito/ai-assistant/pkg/database"
+	"github.com/alkuinvito/ai-assistant/pkg/hash"
 	"github.com/alkuinvito/ai-assistant/pkg/mailer"
 	"github.com/alkuinvito/ai-assistant/pkg/service_error"
 	"github.com/alkuinvito/ai-assistant/pkg/utils"
@@ -66,7 +68,9 @@ func (s *authService) comparePassword(password, hash string) error {
 func (s *authService) GenerateAndSendVerificationToken(ctx context.Context, email string) error {
 	db := s.db.WithContext(ctx)
 
-	limitKey := fmt.Sprintf("email_verification_limit:%s", email)
+	hashedEmail := hash.HashString(email)
+
+	limitKey := fmt.Sprintf("email_verification_limit:%s", hashedEmail)
 	limit, err := s.cache.Get(ctx, limitKey)
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
@@ -77,7 +81,7 @@ func (s *authService) GenerateAndSendVerificationToken(ctx context.Context, emai
 		return service_error.NewTooManyRequests(ctx, "verification limit exceeded", nil)
 	}
 
-	user, err := s.userService.GetUserByEmail(db, email)
+	user, err := s.userService.GetUserByEmail(db, hashedEmail)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) || !user.IsActive {
 			return service_error.NewNotFound(ctx, "user not found", nil)
@@ -94,7 +98,7 @@ func (s *authService) GenerateAndSendVerificationToken(ctx context.Context, emai
 		return service_error.NewInternalServerError(ctx, "failed to generate verification token", err)
 	}
 
-	cacheKey := fmt.Sprintf("email_verification:%s", email)
+	cacheKey := fmt.Sprintf("email_verification:%s", hashedEmail)
 	if err := s.cache.Set(ctx, cacheKey, token, VERIFICATION_TOKEN_TTL); err != nil {
 		return service_error.NewInternalServerError(ctx, "failed to store verification token", err)
 	}
@@ -206,7 +210,8 @@ func (s *authService) Login(ctx context.Context, req *DTOLoginRequest) (*DTOAuth
 		s.cache.Set(ctx, loginAttemptsKey, strconv.Itoa(n+1), 3*time.Minute)
 	}
 
-	user, err := s.userService.GetUserByEmail(db, req.Email)
+	hashedEmail := hash.HashString(req.Email)
+	user, err := s.userService.GetUserByEmail(db, hashedEmail)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			recordFailed()
@@ -251,10 +256,11 @@ func (s *authService) Register(ctx context.Context, req *DTORegisterRequest) err
 	}
 
 	newUser := &users.User{
-		Id:       userId,
-		Name:     req.Name,
-		Email:    req.Email,
-		Password: hashedPassword,
+		Id:        userId,
+		Name:      req.Name,
+		Email:     database.Encrypted(req.Email),
+		EmailHash: hash.HashString(req.Email),
+		Password:  hashedPassword,
 	}
 
 	err = s.userService.CreateUser(db, newUser)
@@ -265,10 +271,14 @@ func (s *authService) Register(ctx context.Context, req *DTORegisterRequest) err
 		return service_error.NewInternalServerError(ctx, "failed to create new user", err)
 	}
 
-	err = s.GenerateAndSendVerificationToken(ctx, req.Email)
-	if err != nil {
-		return service_error.NewInternalServerError(ctx, "failed to send verification email", err)
-	}
+	// Send verification email separate thread
+	go func(reqId, email string) {
+		ctxWithReqId := context.WithValue(context.Background(), "request_id", reqId)
+		newCtx, cancel := context.WithTimeout(ctxWithReqId, 30*time.Second)
+		defer cancel()
+
+		s.GenerateAndSendVerificationToken(newCtx, email)
+	}(utils.GetRequestID(ctx), req.Email)
 
 	return err
 }
@@ -304,7 +314,9 @@ func (s *authService) sendEmailVerification(ctx context.Context, email, token st
 func (s *authService) VerifyEmail(ctx context.Context, req *DTOVerifyEmailRequest) error {
 	db := s.db.WithContext(ctx)
 
-	cacheKey := fmt.Sprintf("email_verification:%s", req.Email)
+	hashedEmail := hash.HashString(req.Email)
+
+	cacheKey := fmt.Sprintf("email_verification:%s", hashedEmail)
 	token, err := s.cache.Get(ctx, cacheKey)
 	if err != nil {
 		return service_error.NewUnauthorized(ctx, "invalid or expired verification token", err)
@@ -315,7 +327,7 @@ func (s *authService) VerifyEmail(ctx context.Context, req *DTOVerifyEmailReques
 	}
 
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := s.userService.VerifyUserEmail(tx, req.Email); err != nil {
+		if err := s.userService.VerifyUserEmail(tx, hashedEmail); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return service_error.NewUnauthorized(ctx, "invalid or expired verification token", err)
 			}
