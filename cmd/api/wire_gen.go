@@ -8,12 +8,15 @@ package main
 
 import (
 	"github.com/alkuinvito/ai-assistant/internal/auth"
+	"github.com/alkuinvito/ai-assistant/internal/invoices"
 	"github.com/alkuinvito/ai-assistant/internal/middlewares"
 	"github.com/alkuinvito/ai-assistant/internal/routers"
+	"github.com/alkuinvito/ai-assistant/internal/uploads"
 	"github.com/alkuinvito/ai-assistant/internal/users"
 	"github.com/alkuinvito/ai-assistant/pkg/cache"
 	"github.com/alkuinvito/ai-assistant/pkg/database"
 	"github.com/alkuinvito/ai-assistant/pkg/mailer"
+	"github.com/alkuinvito/ai-assistant/pkg/storage"
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/wire"
 	"github.com/sirupsen/logrus"
@@ -33,11 +36,22 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 	userService := users.NewUserService(db, userRepository)
 	authService := auth.NewAuthService(cacheCache, db, mailerMailer, userService)
 	middleware := middlewares.NewMiddleware(log, authService)
-	userHandler := users.NewUserHandler(userService)
-	userRouter := users.NewUserRouter(userHandler)
 	authHandler := auth.NewAuthHandler(authService)
 	authRouter := auth.NewAuthRouter(authHandler)
-	router := routers.NewRouter(log, middleware, userRouter, authRouter)
+	storageStorage, err := storage.NewMinioStorage(log)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	uploadService := uploads.NewUploadService(storageStorage)
+	invoiceService := invoices.NewInvoiceService(uploadService)
+	invoiceHandler := invoices.NewInvoiceHandler(invoiceService)
+	invoiceRouter := invoices.NewInvoiceRouter(invoiceHandler)
+	userHandler := users.NewUserHandler(userService)
+	userRouter := users.NewUserRouter(userHandler)
+	router := routers.NewRouter(log, middleware, authRouter, invoiceRouter, userRouter)
 	app := NewApp(router)
 	return app, func() {
 		cleanup3()
@@ -49,5 +63,9 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 // wire.go:
 
 var authSet = wire.NewSet(auth.NewAuthRouter, auth.NewAuthHandler, auth.NewAuthService)
+
+var invoiceSet = wire.NewSet(invoices.NewInvoiceService, invoices.NewInvoiceHandler, invoices.NewInvoiceRouter)
+
+var uploadSet = wire.NewSet(uploads.NewUploadService)
 
 var userSet = wire.NewSet(users.NewUserRepository, users.NewUserService, users.NewUserHandler, users.NewUserRouter)

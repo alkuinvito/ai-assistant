@@ -3,6 +3,8 @@ package users
 import (
 	"time"
 
+	"github.com/alkuinvito/ai-assistant/internal/invoices"
+	"github.com/alkuinvito/ai-assistant/internal/uploads"
 	"github.com/alkuinvito/ai-assistant/pkg/database"
 	"github.com/google/uuid"
 )
@@ -17,4 +19,7 @@ type User struct {
 	IsVerified bool               `gorm:"default:false"`
 	CreatedAt  time.Time          `gorm:"autoCreateTime"`
 	UpdatedAt  time.Time          `gorm:"autoUpdateTime"`
+
+	Files    []uploads.File     `gorm:"foreignKey:UserId;constraint:OnDelete:SET NULL"`
+	Invoices []invoices.Invoice `gorm:"foreignKey:UserId;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 }

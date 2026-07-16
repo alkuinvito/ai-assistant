@@ -1,0 +1,387 @@
+openapi: 3.0.3
+info:
+  title: AI Assistant API
+  description: Enterprise AI assistant for analyzing invoices, sales reports, and more.
+  version: 0.1.0
+  contact:
+    name: Alkuinvito
+
+servers:
+  - url: http://localhost:8000
+    description: Development
+  - url: https://api.example.com
+    description: Production
+
+paths:
+  # ── System ──────────────────────────────────────────────────────
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      tags: [System]
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data: ok
+
+  # ── Authentication ──────────────────────────────────────────────
+  /api/auth/login:
+    post:
+      operationId: authLogin
+      summary: Login with email and password
+      tags: [Authentication]
+      security:
+        - ClientId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTOLoginRequest"
+            example:
+              email: user@example.com
+              password: mypassword123
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data:
+                  access_token: eyJhbGciOiJFUzI1NiJ9...
+                  refresh_token: eyJhbGciOiJFUzI1NiJ9...
+                  expires_in: 300
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/auth/register:
+    post:
+      operationId: authRegister
+      summary: Register a new user account
+      tags: [Authentication]
+      security:
+        - ClientId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTORegisterRequest"
+            example:
+              email: user@example.com
+              password: mypassword123
+              name: John Doe
+      responses:
+        "200":
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data: user registered successfully
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/auth/send-verification:
+    post:
+      operationId: authSendVerification
+      summary: Send email verification code
+      tags: [Authentication]
+      security:
+        - ClientId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTOSendVerificationRequest"
+            example:
+              email: user@example.com
+      responses:
+        "200":
+          description: Verification email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data: verification email sent
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /api/auth/verify-email:
+    post:
+      operationId: authVerifyEmail
+      summary: Verify email with OTP code
+      tags: [Authentication]
+      security:
+        - ClientId: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTOVerifyEmailRequest"
+            example:
+              email: user@example.com
+              token: "123456"
+      responses:
+        "200":
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data: email verified successfully
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Invoices ────────────────────────────────────────────────────
+  /api/invoices/upload:
+    post:
+      operationId: invoiceUploadUrl
+      summary: Generate a presigned PUT URL for direct invoice file upload
+      description: |
+        Returns a presigned R2 URL with the Content-Length header signed
+        into the request signature. The client must PUT the file directly
+        to this URL — R2 will enforce that the actual Content-Length
+        matches the declared size.
+
+        Max file size: 10 MB.
+      tags: [Invoices]
+      security:
+        - ClientId: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTOCreatePresignedPutUrl"
+            example:
+              filename: invoice-2024-03.pdf
+              size: 5242880
+      responses:
+        "200":
+          description: Presigned upload URL generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data:
+                  url: "https://account.r2.cloudflarestorage.com/invoices/invoice-2024-03.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=3600&X-Amz-SignedHeaders=content-length%3Bhost&X-Amz-Signature=..."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+components:
+  securitySchemes:
+    ClientId:
+      type: apiKey
+      in: header
+      name: X-Client-ID
+      description: |
+        Client identifier. Required for every API call.
+        Must match a configured client ID (app or web).
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT access token returned by the login endpoint.
+        Required for protected endpoints.
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            req_id: req_a1b2c3d4
+            error:
+              message: invalid or expired access token
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            req_id: req_a1b2c3d4
+            error:
+              message: "field validation for 'email' failed on the 'email' tag"
+
+    Conflict:
+      description: Resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            req_id: req_a1b2c3d4
+            error:
+              message: user already exists
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            req_id: req_a1b2c3d4
+            error:
+              message: verification limit exceeded
+
+  schemas:
+    # ── Response Envelope ──────────────────────────────────────────
+    SuccessResponse:
+      type: object
+      properties:
+        data:
+          description: The response payload
+        meta:
+          $ref: "#/components/schemas/Meta"
+      required: [data]
+
+    ErrorResponse:
+      type: object
+      properties:
+        req_id:
+          type: string
+          description: Request ID for distributed tracing
+          example: req_a1b2c3d4
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "field validation for 'email' failed on the 'email' tag"
+          required: [message]
+      required: [req_id, error]
+
+    Meta:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of records
+        page:
+          type: integer
+          description: Current page number
+        limit:
+          type: integer
+          description: Records per page
+
+    # ── Auth ───────────────────────────────────────────────────────
+    DTOLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          minLength: 8
+          maxLength: 32
+          example: mypassword123
+
+    DTORegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          minLength: 8
+          maxLength: 32
+          example: mypassword123
+        name:
+          type: string
+          minLength: 3
+          maxLength: 32
+          example: John Doe
+
+    DTOSendVerificationRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+
+    DTOVerifyEmailRequest:
+      type: object
+      required: [email, token]
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        token:
+          type: string
+          description: 6-digit OTP code sent via email
+          example: "123456"
+
+    DTOAuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: JWT access token (short-lived, 5 minutes)
+        refresh_token:
+          type: string
+          description: JWT refresh token (24h). Omitted for web clients (set as HTTP-only cookie instead)
+        expires_in:
+          type: integer
+          description: Access token TTL in seconds
+          example: 300
+
+    # ── Invoices ───────────────────────────────────────────────────
+    DTOCreatePresignedPutUrl:
+      type: object
+      required: [filename, size]
+      properties:
+        filename:
+          type: string
+          description: Original file name (used as the R2 object key)
+          example: invoice-2024-03.pdf
+        size:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+          description: Exact file size in bytes. This value is signed into the presigned URL — R2 will reject uploads where the actual Content-Length does not match.
+          example: 5242880
+
+    DTOPresignedPutUrl:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Presigned PUT URL for direct upload to R2. Expires in 1 hour.
+          example: "https://account.r2.cloudflarestorage.com/invoices/invoice-2024-03.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&..."

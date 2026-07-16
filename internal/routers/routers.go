@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/alkuinvito/ai-assistant/internal/auth"
+	"github.com/alkuinvito/ai-assistant/internal/invoices"
 	"github.com/alkuinvito/ai-assistant/internal/middlewares"
 	"github.com/alkuinvito/ai-assistant/internal/users"
 	"github.com/alkuinvito/ai-assistant/pkg/response"
@@ -15,24 +16,29 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const maxBodySize = 10 * 1024 * 1024 // 10MB
+
 type Router struct {
-	log         *logrus.Logger
-	middlewares middlewares.Middleware
-	userRouter  users.UserRouter
-	authRouter  auth.AuthRouter
+	log           *logrus.Logger
+	middlewares   middlewares.Middleware
+	authRouter    auth.AuthRouter
+	invoiceRouter invoices.InvoiceRouter
+	userRouter    users.UserRouter
 }
 
 func NewRouter(
 	log *logrus.Logger,
 	middlewares middlewares.Middleware,
-	userRouter users.UserRouter,
 	authRouter auth.AuthRouter,
+	invoiceRouter invoices.InvoiceRouter,
+	userRouter users.UserRouter,
 ) *Router {
 	return &Router{
-		log:         log,
-		middlewares: middlewares,
-		userRouter:  userRouter,
-		authRouter:  authRouter,
+		log:           log,
+		middlewares:   middlewares,
+		authRouter:    authRouter,
+		invoiceRouter: invoiceRouter,
+		userRouter:    userRouter,
 	}
 }
 
@@ -55,6 +61,7 @@ func (r *Router) Handle() *fiber.App {
 			return response.New(c, appError)
 		},
 		StructValidator: &structValidator{validate: validator.New()},
+		BodyLimit:       maxBodySize,
 	})
 
 	// Middlewares
@@ -76,6 +83,7 @@ func (r *Router) Handle() *fiber.App {
 	// JWT authenticated only
 	authGuard := api.Use(r.middlewares.JWTAuthentication())
 	r.userRouter.Handle(authGuard)
+	r.invoiceRouter.Handle(authGuard)
 
 	return app
 }

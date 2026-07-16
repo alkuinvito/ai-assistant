@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/alkuinvito/ai-assistant/internal/invoices"
+	"github.com/alkuinvito/ai-assistant/internal/uploads"
 	"github.com/alkuinvito/ai-assistant/internal/users"
 	"github.com/alkuinvito/ai-assistant/pkg/database"
 	"github.com/alkuinvito/ai-assistant/pkg/logger"
@@ -25,6 +27,9 @@ func main() {
 	defer cleanup()
 
 	if err := db.AutoMigrate(
+		&uploads.File{},
+		&invoices.Invoice{},
+		&invoices.InvoiceItem{},
 		&users.User{},
 	); err != nil {
 		log.Fatal(err)
