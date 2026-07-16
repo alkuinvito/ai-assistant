@@ -183,9 +183,113 @@ paths:
                 $ref: "#/components/schemas/SuccessResponse"
               example:
                 data:
-                  url: "https://account.r2.cloudflarestorage.com/invoices/invoice-2024-03.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...&X-Amz-Date=...&X-Amz-Expires=3600&X-Amz-SignedHeaders=content-length%3Bhost&X-Amz-Signature=..."
+                  url: "https://account.r2.cloudflarestorage.com/invoices/invoice-2024-03.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&..."
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/invoices/analyze:
+    post:
+      operationId: invoiceAnalyze
+      summary: Analyze an uploaded invoice with AI and return extracted data (no DB write)
+      description: |
+        Downloads the uploaded invoice file from R2, sends it to the AI model
+        for structured data extraction, and returns the result to the frontend.
+        Nothing is saved to the database — the frontend can review, edit, and
+        then call the `/save` endpoint to persist the verified data.
+      tags: [Invoices]
+      security:
+        - ClientId: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTOAnalyzeInvoiceRequest"
+            example:
+              file_id: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        "200":
+          description: AI extraction result (not persisted)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data:
+                  vendor_name: "Acme Corp"
+                  description: "Monthly consulting services - March 2024"
+                  currency: "USD"
+                  tax: 45.50
+                  additional_fees: 0
+                  total_amount: 1045.50
+                  issued_at: "2024-03-15T00:00:00Z"
+                  items:
+                    - name: "Consulting Services"
+                      qty: 20
+                      unit: hours
+                      unit_price: 50
+                      total_price: 1000
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/invoices/save:
+    post:
+      operationId: invoiceSave
+      summary: Save a verified invoice to the database
+      description: |
+        Persists the verified (and possibly user-edited) invoice data returned
+        by the `/analyze` endpoint. Requires the same `file_id` and the full
+        invoice payload. Creates both the Invoice and InvoiceItem records
+        in a single transaction.
+      tags: [Invoices]
+      security:
+        - ClientId: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTOSaveInvoiceRequest"
+            example:
+              file_id: "550e8400-e29b-41d4-a716-446655440000"
+              vendor_name: "Acme Corp"
+              description: "Monthly consulting services - March 2024 (verified)"
+              currency: "USD"
+              tax: 45.50
+              additional_fees: 0
+              total_amount: 1045.50
+              issued_at: "2024-03-15T00:00:00Z"
+              items:
+                - name: "Consulting Services"
+                  qty: 20
+                  unit: hours
+                  unit_price: 50
+                  total_price: 1000
+      responses:
+        "200":
+          description: Invoice saved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data:
+                  id: "550e8400-e29b-41d4-a716-446655440001"
+                  message: "invoice saved successfully"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -239,6 +343,28 @@ components:
             req_id: req_a1b2c3d4
             error:
               message: user already exists
+
+    Forbidden:
+      description: Access denied
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            req_id: req_a1b2c3d4
+            error:
+              message: file does not belong to user
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            req_id: req_a1b2c3d4
+            error:
+              message: file not found
 
     TooManyRequests:
       description: Rate limit exceeded
@@ -385,3 +511,153 @@ components:
           format: uri
           description: Presigned PUT URL for direct upload to R2. Expires in 1 hour.
           example: "https://account.r2.cloudflarestorage.com/invoices/invoice-2024-03.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&..."
+
+    DTOAnalyzeInvoiceRequest:
+      type: object
+      required: [file_id]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+          description: ID of the previously uploaded file
+          example: 550e8400-e29b-41d4-a716-446655440000
+
+    DTOAnalyzeInvoiceResponse:
+      type: object
+      properties:
+        vendor_name:
+          type: string
+          description: Name of the vendor or supplier
+          example: Acme Corp
+        description:
+          type: string
+          description: Invoice description or notes
+          example: Monthly consulting services - March 2024
+        currency:
+          type: string
+          description: 3-letter currency code
+          example: USD
+        tax:
+          type: number
+          description: Total tax amount
+          example: 45.50
+        additional_fees:
+          type: number
+          description: Additional fees or charges
+          example: 0
+        total_amount:
+          type: number
+          description: Total invoice amount including tax and fees
+          example: 1045.50
+        issued_at:
+          type: string
+          format: date-time
+          description: Invoice issue date
+          example: "2024-03-15T00:00:00Z"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DTOInvoiceItemResponse"
+
+    DTOSaveInvoiceRequest:
+      type: object
+      required: [file_id, vendor_name, total_amount]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+          description: ID of the uploaded file
+          example: 550e8400-e29b-41d4-a716-446655440000
+        vendor_name:
+          type: string
+          description: Name of the vendor or supplier
+          example: Acme Corp
+        description:
+          type: string
+          description: Invoice description or notes
+          example: Monthly consulting services - March 2024 (verified)
+        currency:
+          type: string
+          description: 3-letter currency code
+          example: USD
+        tax:
+          type: number
+          description: Total tax amount
+          example: 45.50
+        additional_fees:
+          type: number
+          description: Additional fees or charges
+          example: 0
+        total_amount:
+          type: number
+          description: Total invoice amount including tax and fees
+          example: 1045.50
+        issued_at:
+          type: string
+          format: date-time
+          description: Invoice issue date
+          example: "2024-03-15T00:00:00Z"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DTOSaveInvoiceItemRequest"
+
+    DTOSaveInvoiceResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID of the created Invoice record
+          example: 550e8400-e29b-41d4-a716-446655440001
+        message:
+          type: string
+          example: invoice saved successfully
+
+    DTOInvoiceItemResponse:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Item or service name
+          example: Consulting Services
+        qty:
+          type: integer
+          description: Quantity
+          example: 20
+        unit:
+          type: string
+          description: Unit of measurement
+          example: hours
+        unit_price:
+          type: number
+          description: Price per unit
+          example: 50
+        total_price:
+          type: number
+          description: Total price for this line item
+          example: 1000
+
+    DTOSaveInvoiceItemRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Item or service name
+          example: Consulting Services
+        qty:
+          type: integer
+          description: Quantity
+          example: 20
+        unit:
+          type: string
+          description: Unit of measurement
+          example: hours
+        unit_price:
+          type: number
+          description: Price per unit
+          example: 50
+        total_price:
+          type: number
+          description: Total price for this line item
+          example: 1000

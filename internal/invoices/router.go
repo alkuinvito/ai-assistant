@@ -17,5 +17,7 @@ func NewInvoiceRouter(handler InvoiceHandler) InvoiceRouter {
 func (r *invoiceRouter) Handle(router fiber.Router) {
 	router.Route("/invoices", func(group fiber.Router) {
 		group.Post("/upload", r.handler.CreateInvoiceUploadUrl)
+		group.Post("/analyze", r.handler.AnalyzeInvoice)
+		group.Post("/save", r.handler.SaveInvoice)
 	})
 }

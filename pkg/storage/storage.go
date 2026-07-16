@@ -15,6 +15,7 @@ import (
 )
 
 type Storage interface {
+	GetObject(ctx context.Context, bucketName, objectName string) ([]byte, error)
 	PresignedPostUpload(ctx context.Context, bucketName, objectName string, expiresIn ...int) (string, map[string]string, error)
 	PresignedPutUpload(ctx context.Context, bucketName, objectName string, fileSize int64, expiresIn ...int) (string, error)
 	PutObject(ctx context.Context, bucketName, objectName string, reader io.Reader, objectSize int64, contentType string) error
@@ -36,6 +37,16 @@ func NewMinioStorage(logger *logrus.Logger) (Storage, error) {
 	}
 
 	return &minioStorage{client}, nil
+}
+
+func (m *minioStorage) GetObject(ctx context.Context, bucketName, objectName string) ([]byte, error) {
+	reader, err := m.client.GetObject(ctx, bucketName, objectName, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	return io.ReadAll(reader)
 }
 
 func (m *minioStorage) PresignedPostUpload(ctx context.Context, bucketName, objectName string, expiresIn ...int) (string, map[string]string, error) {

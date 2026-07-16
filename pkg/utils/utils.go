@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -52,4 +53,38 @@ func GetIp(ctx context.Context) string {
 	}
 
 	return ""
+}
+
+// DetectMimeType returns a MIME type based on the file extension.
+func DetectMimeType(filename string) string {
+	switch {
+	case len(filename) > 4 && filename[len(filename)-4:] == ".pdf":
+		return "application/pdf"
+	case len(filename) > 4 && filename[len(filename)-4:] == ".jpg":
+		return "image/jpeg"
+	case len(filename) > 5 && filename[len(filename)-5:] == ".jpeg":
+		return "image/jpeg"
+	case len(filename) > 4 && filename[len(filename)-4:] == ".png":
+		return "image/png"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// ParseDate tries common date layouts.
+func ParseDate(s string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02",
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04:05Z",
+		"02/01/2006",
+		"01/02/2006",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unable to parse date: %s", s)
 }

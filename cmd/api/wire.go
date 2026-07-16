@@ -26,12 +26,14 @@ var authSet = wire.NewSet(
 )
 
 var invoiceSet = wire.NewSet(
-	invoices.NewInvoiceService,
 	invoices.NewInvoiceHandler,
+	invoices.NewInvoiceRepository,
 	invoices.NewInvoiceRouter,
+	invoices.NewInvoiceService,
 )
 
 var uploadSet = wire.NewSet(
+	uploads.NewUploadRepository,
 	uploads.NewUploadService,
 )
 

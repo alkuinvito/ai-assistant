@@ -38,6 +38,8 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 	middleware := middlewares.NewMiddleware(log, authService)
 	authHandler := auth.NewAuthHandler(authService)
 	authRouter := auth.NewAuthRouter(authHandler)
+	invoiceRepository := invoices.NewInvoiceRepository()
+	uploadRepository := uploads.NewUploadRepository()
 	storageStorage, err := storage.NewMinioStorage(log)
 	if err != nil {
 		cleanup3()
@@ -45,8 +47,8 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 		cleanup()
 		return nil, nil, err
 	}
-	uploadService := uploads.NewUploadService(storageStorage)
-	invoiceService := invoices.NewInvoiceService(uploadService)
+	uploadService := uploads.NewUploadService(db, uploadRepository, storageStorage)
+	invoiceService := invoices.NewInvoiceService(db, invoiceRepository, uploadService, storageStorage)
 	invoiceHandler := invoices.NewInvoiceHandler(invoiceService)
 	invoiceRouter := invoices.NewInvoiceRouter(invoiceHandler)
 	userHandler := users.NewUserHandler(userService)
@@ -64,8 +66,8 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 
 var authSet = wire.NewSet(auth.NewAuthRouter, auth.NewAuthHandler, auth.NewAuthService)
 
-var invoiceSet = wire.NewSet(invoices.NewInvoiceService, invoices.NewInvoiceHandler, invoices.NewInvoiceRouter)
+var invoiceSet = wire.NewSet(invoices.NewInvoiceHandler, invoices.NewInvoiceRepository, invoices.NewInvoiceRouter, invoices.NewInvoiceService)
 
-var uploadSet = wire.NewSet(uploads.NewUploadService)
+var uploadSet = wire.NewSet(uploads.NewUploadRepository, uploads.NewUploadService)
 
 var userSet = wire.NewSet(users.NewUserRepository, users.NewUserService, users.NewUserHandler, users.NewUserRouter)
