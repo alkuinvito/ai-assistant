@@ -16,3 +16,10 @@ type File struct {
 
 	// Invoice invoices.Invoice `gorm:"foreignKey:FileId;constraint:OnUpdate:CASCADE,OnDelete:SET NULL"`
 }
+
+type UserQuota struct {
+	UserID    uuid.UUID `gorm:"type:uuid;primaryKey"`
+	MaxBytes  int64     `gorm:"not null;default:536870912"` // 512 MB
+	UsedBytes int64     `gorm:"not null;default:0"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+}

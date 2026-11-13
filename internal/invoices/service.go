@@ -19,7 +19,7 @@ import (
 
 type InvoiceService interface {
 	AnalyzeInvoice(ctx context.Context, userId string, req *DTOAnalyzeInvoiceRequest) (*DTOAnalyzeInvoiceResponse, error)
-	CreateInvoiceUploadUrl(ctx context.Context, req *uploads.DTOCreatePresignedPutUrl) (uploads.DTOPresignedPutUrl, error)
+	CreateInvoiceUploadUrl(ctx context.Context, userId string, req *uploads.DTOCreatePresignedPutUrl) (uploads.DTOPresignedPutUrl, error)
 	SaveInvoice(ctx context.Context, userId string, req *DTOSaveInvoiceRequest) (*DTOSaveInvoiceResponse, error)
 }
 
@@ -127,8 +127,13 @@ func (s *invoiceService) AnalyzeInvoice(ctx context.Context, userId string, req 
 	}, nil
 }
 
-func (s *invoiceService) CreateInvoiceUploadUrl(ctx context.Context, req *uploads.DTOCreatePresignedPutUrl) (uploads.DTOPresignedPutUrl, error) {
-	return s.uploadService.CreatePresignedPutUploadUrl(ctx, "invoices", req.Filename, req.Size, 3600)
+func (s *invoiceService) CreateInvoiceUploadUrl(ctx context.Context, userId string, req *uploads.DTOCreatePresignedPutUrl) (uploads.DTOPresignedPutUrl, error) {
+	uid, err := uuid.Parse(userId)
+	if err != nil {
+		return uploads.DTOPresignedPutUrl{}, service_error.NewUnauthorized(ctx, "invalid user id", err)
+	}
+
+	return s.uploadService.CreatePresignedPutUploadUrl(ctx, "invoices", req.Filename, req.Size, uid, 3600)
 }
 
 func (s *invoiceService) SaveInvoice(ctx context.Context, userId string, req *DTOSaveInvoiceRequest) (*DTOSaveInvoiceResponse, error) {
@@ -145,7 +150,8 @@ func (s *invoiceService) SaveInvoice(ctx context.Context, userId string, req *DT
 	db := s.db.WithContext(ctx)
 
 	// Verify the file exists and belongs to the user
-	if _, err := s.uploadService.GetFileByIDAndUser(ctx, db, fileId, uid); err != nil {
+	file, err := s.uploadService.GetFileByIDAndUser(ctx, db, fileId, uid)
+	if err != nil {
 		return nil, err
 	}
 
@@ -184,6 +190,12 @@ func (s *invoiceService) SaveInvoice(ctx context.Context, userId string, req *DT
 
 	if err := s.repo.CreateInvoice(db, invoice, items); err != nil {
 		return nil, service_error.NewInternalServerError(ctx, "failed to save invoice", err)
+	}
+
+	// Increment the user's upload quota with the confirmed file size
+	if err := s.uploadService.IncrementUsedBytes(ctx, uid, int64(file.Size)); err != nil {
+		// Invoice was saved successfully, but quota increment failed — log for auditing
+		_ = service_error.NewInternalServerError(ctx, "failed to increment upload quota", err)
 	}
 
 	return &DTOSaveInvoiceResponse{

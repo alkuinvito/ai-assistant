@@ -2,6 +2,8 @@ package uploads
 
 import "github.com/google/uuid"
 
+const DefaultMaxBytes int64 = 512 * 1024 * 1024 // 512 MB per user
+
 type DTOCreatePresignedPutUrl struct {
 	Filename string `json:"filename" validate:"required"`
 	Size     int64  `json:"size" validate:"required,min=1,max=10485760"`
@@ -12,7 +14,8 @@ type DTOCreateUploadUrl struct {
 }
 
 type DTOPresignedPutUrl struct {
-	Url string `json:"url"`
+	Url    string    `json:"url"`
+	FileId uuid.UUID `json:"file_id"`
 }
 
 type DTOUploadFileResponse struct {

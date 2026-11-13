@@ -12,17 +12,16 @@ import (
 	"github.com/sirupsen/logrus"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	gormlogger "gorm.io/gorm/logger"
 )
 
 type gormLogrus struct {
 	logger    *logrus.Logger
-	logLevel  logger.LogLevel
+	logLevel  gormlogger.LogLevel
 	threshold time.Duration
 }
 
-func (l *gormLogrus) LogMode(level logger.LogLevel) logger.Interface {
+func (l *gormLogrus) LogMode(level gormlogger.LogLevel) gormlogger.Interface {
 	l.logLevel = level
 	return l
 }
@@ -49,42 +48,42 @@ func (l *gormLogrus) entry(ctx context.Context) *logrus.Entry {
 }
 
 func (l *gormLogrus) Info(ctx context.Context, msg string, data ...interface{}) {
-	if l.logLevel >= logger.Info {
+	if l.logLevel >= gormlogger.Info {
 		l.entry(ctx).Infof(msg, data...)
 	}
 }
 
 func (l *gormLogrus) Warn(ctx context.Context, msg string, data ...interface{}) {
-	if l.logLevel >= logger.Warn {
+	if l.logLevel >= gormlogger.Warn {
 		l.entry(ctx).Warnf(msg, data...)
 	}
 }
 
 func (l *gormLogrus) Error(ctx context.Context, msg string, data ...interface{}) {
-	if l.logLevel >= logger.Error {
+	if l.logLevel >= gormlogger.Error {
 		l.entry(ctx).Errorf(msg, data...)
 	}
 }
 
 func (l *gormLogrus) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
-	if l.logLevel <= logger.Silent {
+	if l.logLevel <= gormlogger.Silent {
 		return
 	}
 
 	elapsed := time.Since(begin)
 	sql, rows := fc()
 
-	if err != nil && l.logLevel >= logger.Error {
+	if err != nil && l.logLevel >= gormlogger.Error {
 		l.entry(ctx).WithFields(logrus.Fields{
 			"duration": elapsed.Microseconds(),
 			"rows":     rows,
 		}).WithError(err).Error(sql)
-	} else if elapsed > l.threshold && l.logLevel >= logger.Warn {
+	} else if elapsed > l.threshold && l.logLevel >= gormlogger.Warn {
 		l.entry(ctx).WithFields(logrus.Fields{
 			"duration": elapsed.Microseconds(),
 			"rows":     rows,
 		}).Warn(sql)
-	} else if l.logLevel >= logger.Info {
+	} else if l.logLevel >= gormlogger.Info {
 		l.entry(ctx).WithFields(logrus.Fields{
 			"duration": elapsed.Microseconds(),
 			"rows":     rows,

@@ -161,6 +161,7 @@ paths:
         matches the declared size.
 
         Max file size: 10 MB.
+        Each user has a 512 MB upload quota enforced at this point.
       tags: [Invoices]
       security:
         - ClientId: []
@@ -183,9 +184,12 @@ paths:
                 $ref: "#/components/schemas/SuccessResponse"
               example:
                 data:
+                  file_id: 550e8400-e29b-41d4-a716-446655440000
                   url: "https://account.r2.cloudflarestorage.com/invoices/invoice-2024-03.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256&..."
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/QuotaExceeded"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -377,6 +381,17 @@ components:
             error:
               message: verification limit exceeded
 
+    QuotaExceeded:
+      description: Upload quota exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            req_id: req_a1b2c3d4
+            error:
+              message: upload quota exceeded. please free up space or contact support
+
   schemas:
     # ── Response Envelope ──────────────────────────────────────────
     SuccessResponse:
@@ -506,6 +521,11 @@ components:
     DTOPresignedPutUrl:
       type: object
       properties:
+        file_id:
+          type: string
+          format: uuid
+          description: ID of the created file record. Use this in subsequent /analyze and /save requests.
+          example: 550e8400-e29b-41d4-a716-446655440000
         url:
           type: string
           format: uri

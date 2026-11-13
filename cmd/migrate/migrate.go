@@ -28,6 +28,7 @@ func main() {
 
 	if err := db.AutoMigrate(
 		&uploads.File{},
+		&uploads.UserQuota{},
 		&invoices.Invoice{},
 		&invoices.InvoiceItem{},
 		&users.User{},

@@ -46,7 +46,12 @@ func (h *invoiceHandler) CreateInvoiceUploadUrl(c fiber.Ctx) error {
 		return err
 	}
 
-	result, err := h.service.CreateInvoiceUploadUrl(c, req)
+	userId, ok := c.Locals("user_id").(string)
+	if !ok || userId == "" {
+		return fiber.ErrUnauthorized
+	}
+
+	result, err := h.service.CreateInvoiceUploadUrl(c, userId, req)
 	if err != nil {
 		return err
 	}
