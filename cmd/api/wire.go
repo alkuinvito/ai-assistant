@@ -7,6 +7,7 @@ import (
 	"github.com/alkuinvito/ai-assistant/internal/auth"
 	"github.com/alkuinvito/ai-assistant/internal/invoices"
 	"github.com/alkuinvito/ai-assistant/internal/middlewares"
+	"github.com/alkuinvito/ai-assistant/internal/roles"
 	"github.com/alkuinvito/ai-assistant/internal/routers"
 	"github.com/alkuinvito/ai-assistant/internal/uploads"
 	"github.com/alkuinvito/ai-assistant/internal/users"
@@ -32,6 +33,13 @@ var invoiceSet = wire.NewSet(
 	invoices.NewInvoiceService,
 )
 
+var roleSet = wire.NewSet(
+	roles.NewRoleHandler,
+	roles.NewRoleRepository,
+	roles.NewRoleRouter,
+	roles.NewRoleService,
+)
+
 var uploadSet = wire.NewSet(
 	uploads.NewUploadRepository,
 	uploads.NewUploadService,
@@ -53,6 +61,7 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 		middlewares.NewMiddleware,
 		authSet,
 		invoiceSet,
+		roleSet,
 		uploadSet,
 		userSet,
 		routers.NewRouter,

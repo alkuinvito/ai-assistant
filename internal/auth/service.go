@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/alkuinvito/ai-assistant/internal/roles"
 	"github.com/alkuinvito/ai-assistant/internal/users"
 	"github.com/alkuinvito/ai-assistant/pkg/cache"
 	"github.com/alkuinvito/ai-assistant/pkg/database"
@@ -33,7 +34,7 @@ type AuthService interface {
 	comparePassword(password, hash string) error
 	GenerateAndSendVerificationToken(ctx context.Context, email string) error
 	generateOTP() (string, error)
-	generateTokenPair(userId string) (*DTOAuthResponse, error)
+	generateTokenPair(ctx context.Context, userId string) (*DTOAuthResponse, error)
 	GetAccessTokenExpiresIn() int
 	GetRefreshTokenExpiresIn() int
 	hashPassword(password string) (string, error)
@@ -48,14 +49,16 @@ type authService struct {
 	cache       cache.Cache
 	db          *gorm.DB
 	mailer      mailer.Mailer
+	roleService roles.RoleService
 	userService users.UserService
 }
 
-func NewAuthService(cache cache.Cache, db *gorm.DB, mailer mailer.Mailer, userService users.UserService) AuthService {
+func NewAuthService(cache cache.Cache, db *gorm.DB, mailer mailer.Mailer, roleService roles.RoleService, userService users.UserService) AuthService {
 	return &authService{
 		cache:       cache,
 		db:          db,
 		mailer:      mailer,
+		roleService: roleService,
 		userService: userService,
 	}
 }
@@ -130,7 +133,7 @@ func (s *authService) generateOTP() (string, error) {
 	return fmt.Sprintf("%06d", finalNum), nil
 }
 
-func (s *authService) generateTokenPair(userId string) (*DTOAuthResponse, error) {
+func (s *authService) generateTokenPair(ctx context.Context, userId string) (*DTOAuthResponse, error) {
 	key := os.Getenv("JWT_PRIVATE_KEY")
 	tokenId := rand.Text()
 	issuer := os.Getenv("JWT_ISSUER")
@@ -147,6 +150,11 @@ func (s *authService) generateTokenPair(userId string) (*DTOAuthResponse, error)
 		return nil, errors.New("JWT_ISSUER environment variable not set")
 	}
 
+	access, err := s.roleService.GetUserAccess(ctx, userId)
+	if err != nil {
+		return nil, err
+	}
+
 	privateKey, err := jwt.ParseECPrivateKeyFromPEM([]byte(key))
 	if err != nil {
 		return nil, err
@@ -154,11 +162,13 @@ func (s *authService) generateTokenPair(userId string) (*DTOAuthResponse, error)
 
 	t := jwt.NewWithClaims(jwt.SigningMethodES256,
 		jwt.MapClaims{
-			"jti": tokenId,
-			"iss": issuer,
-			"sub": subject,
-			"exp": accessTokenExp,
-			"iat": issuedAt,
+			"jti":         tokenId,
+			"iss":         issuer,
+			"sub":         subject,
+			"exp":         accessTokenExp,
+			"iat":         issuedAt,
+			"roles":       access.Roles,
+			"permissions": access.Permissions,
 		})
 	t.Header["typ"] = "at+jwt"
 
@@ -247,7 +257,7 @@ func (s *authService) Login(ctx context.Context, req *DTOLoginRequest) (*DTOAuth
 		return nil, service_error.NewUnauthorized(ctx, "email or password is incorrect", err)
 	}
 
-	tokenPair, err := s.generateTokenPair(user.Id.String())
+	tokenPair, err := s.generateTokenPair(ctx, user.Id.String())
 	if err != nil {
 		return nil, service_error.NewInternalServerError(ctx, "failed to generate token pair", err)
 	}
@@ -282,6 +292,12 @@ func (s *authService) Register(ctx context.Context, req *DTORegisterRequest) err
 			return service_error.NewConflict(ctx, "user already exists", err)
 		}
 		return service_error.NewInternalServerError(ctx, "failed to create new user", err)
+	}
+
+	// Assign the default role. Registration should still succeed if RBAC is not
+	// seeded yet, so the failure is logged instead of returned.
+	if err := s.roleService.AssignRoleByName(ctx, newUser.Id.String(), "user"); err != nil {
+		_ = service_error.NewInternalServerError(ctx, "failed to assign default role", err)
 	}
 
 	// Send verification email separate thread

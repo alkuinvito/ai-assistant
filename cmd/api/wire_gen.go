@@ -10,6 +10,7 @@ import (
 	"github.com/alkuinvito/ai-assistant/internal/auth"
 	"github.com/alkuinvito/ai-assistant/internal/invoices"
 	"github.com/alkuinvito/ai-assistant/internal/middlewares"
+	"github.com/alkuinvito/ai-assistant/internal/roles"
 	"github.com/alkuinvito/ai-assistant/internal/routers"
 	"github.com/alkuinvito/ai-assistant/internal/uploads"
 	"github.com/alkuinvito/ai-assistant/internal/users"
@@ -32,10 +33,11 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 		return nil, nil, err
 	}
 	mailerMailer, cleanup3 := mailer.NewSmtpMail(log)
+	roleRepository := roles.NewRoleRepository()
+	roleService := roles.NewRoleService(db, roleRepository)
 	userRepository := users.NewUserRepository()
 	userService := users.NewUserService(db, userRepository)
-	authService := auth.NewAuthService(cacheCache, db, mailerMailer, userService)
-	middleware := middlewares.NewMiddleware(log, authService)
+	authService := auth.NewAuthService(cacheCache, db, mailerMailer, roleService, userService)
 	authHandler := auth.NewAuthHandler(authService)
 	authRouter := auth.NewAuthRouter(authHandler)
 	invoiceRepository := invoices.NewInvoiceRepository()
@@ -51,9 +53,12 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 	invoiceService := invoices.NewInvoiceService(db, invoiceRepository, uploadService, storageStorage)
 	invoiceHandler := invoices.NewInvoiceHandler(invoiceService)
 	invoiceRouter := invoices.NewInvoiceRouter(invoiceHandler)
+	middleware := middlewares.NewMiddleware(log, authService)
+	roleHandler := roles.NewRoleHandler(roleService)
+	roleRouter := roles.NewRoleRouter(roleHandler)
 	userHandler := users.NewUserHandler(userService)
 	userRouter := users.NewUserRouter(userHandler)
-	router := routers.NewRouter(log, middleware, authRouter, invoiceRouter, userRouter)
+	router := routers.NewRouter(authRouter, invoiceRouter, log, middleware, roleRouter, userRouter)
 	app := NewApp(router)
 	return app, func() {
 		cleanup3()
@@ -67,6 +72,8 @@ func NewHttpServer(log *logrus.Logger) (*fiber.App, func(), error) {
 var authSet = wire.NewSet(auth.NewAuthRouter, auth.NewAuthHandler, auth.NewAuthService)
 
 var invoiceSet = wire.NewSet(invoices.NewInvoiceHandler, invoices.NewInvoiceRepository, invoices.NewInvoiceRouter, invoices.NewInvoiceService)
+
+var roleSet = wire.NewSet(roles.NewRoleHandler, roles.NewRoleRepository, roles.NewRoleRouter, roles.NewRoleService)
 
 var uploadSet = wire.NewSet(uploads.NewUploadRepository, uploads.NewUploadService)
 

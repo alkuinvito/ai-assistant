@@ -6,6 +6,7 @@ import (
 	"github.com/alkuinvito/ai-assistant/internal/auth"
 	"github.com/alkuinvito/ai-assistant/internal/invoices"
 	"github.com/alkuinvito/ai-assistant/internal/middlewares"
+	"github.com/alkuinvito/ai-assistant/internal/roles"
 	"github.com/alkuinvito/ai-assistant/internal/users"
 	"github.com/alkuinvito/ai-assistant/pkg/response"
 	"github.com/alkuinvito/ai-assistant/pkg/service_error"
@@ -19,25 +20,28 @@ import (
 const maxBodySize = 10 * 1024 * 1024 // 10MB
 
 type Router struct {
-	log           *logrus.Logger
-	middlewares   middlewares.Middleware
 	authRouter    auth.AuthRouter
 	invoiceRouter invoices.InvoiceRouter
+	log           *logrus.Logger
+	middlewares   middlewares.Middleware
+	roleRouter    roles.RoleRouter
 	userRouter    users.UserRouter
 }
 
 func NewRouter(
-	log *logrus.Logger,
-	middlewares middlewares.Middleware,
 	authRouter auth.AuthRouter,
 	invoiceRouter invoices.InvoiceRouter,
+	log *logrus.Logger,
+	middlewares middlewares.Middleware,
+	roleRouter roles.RoleRouter,
 	userRouter users.UserRouter,
 ) *Router {
 	return &Router{
-		log:           log,
-		middlewares:   middlewares,
 		authRouter:    authRouter,
 		invoiceRouter: invoiceRouter,
+		log:           log,
+		middlewares:   middlewares,
+		roleRouter:    roleRouter,
 		userRouter:    userRouter,
 	}
 }
@@ -82,8 +86,19 @@ func (r *Router) Handle() *fiber.App {
 
 	// JWT authenticated only
 	authGuard := api.Use(r.middlewares.JWTAuthentication())
-	r.userRouter.Handle(authGuard)
-	r.invoiceRouter.Handle(authGuard)
+	r.invoiceRouter.Handle(authGuard, invoices.InvoiceGuards{
+		FileWrite:    r.middlewares.RequirePermission("file:write"),
+		InvoiceRead:  r.middlewares.RequirePermission("invoice:read"),
+		InvoiceWrite: r.middlewares.RequirePermission("invoice:write"),
+	})
+	r.userRouter.Handle(authGuard, users.UserGuards{
+		ProfileWrite: r.middlewares.RequirePermission("profile:write"),
+	})
+
+	// Admin only
+	adminGuard := api.Group("/admin")
+	adminGuard.Use(r.middlewares.JWTAuthentication(), r.middlewares.RequireRole("admin"))
+	r.roleRouter.Handle(adminGuard)
 
 	return app
 }
