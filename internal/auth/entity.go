@@ -29,3 +29,11 @@ type DTOVerifyEmailRequest struct {
 type DTOMessageResponse struct {
 	Message string `json:"message"`
 }
+
+type DTOLogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type DTORefreshRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
+}

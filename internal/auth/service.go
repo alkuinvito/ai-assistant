@@ -30,6 +30,22 @@ var REFRESH_TOKEN_EXPIRES_IN = 24 * 60 * 60 // 24 hours
 
 const VERIFICATION_TOKEN_TTL = 5 * time.Minute
 
+// refreshTokenKey returns the cache key used to track an issued refresh token.
+func refreshTokenKey(jti string) string {
+	return fmt.Sprintf("refresh_token:%s", jti)
+}
+
+// tokenID extracts the "jti" claim from a token's claims.
+func tokenID(claims jwt.Claims) string {
+	mapClaims, ok := claims.(jwt.MapClaims)
+	if !ok {
+		return ""
+	}
+
+	jti, _ := mapClaims["jti"].(string)
+	return jti
+}
+
 type AuthService interface {
 	comparePassword(password, hash string) error
 	GenerateAndSendVerificationToken(ctx context.Context, email string) error
@@ -39,10 +55,13 @@ type AuthService interface {
 	GetRefreshTokenExpiresIn() int
 	hashPassword(password string) (string, error)
 	Login(ctx context.Context, req *DTOLoginRequest) (*DTOAuthResponse, error)
+	Logout(ctx context.Context, refreshToken string) error
+	Refresh(ctx context.Context, refreshToken string) (*DTOAuthResponse, error)
 	Register(ctx context.Context, req *DTORegisterRequest) error
 	sendEmailVerification(ctx context.Context, email, token string) error
 	VerifyAccessToken(tokenString string) (jwt.Claims, error)
 	VerifyEmail(ctx context.Context, req *DTOVerifyEmailRequest) error
+	VerifyRefreshToken(tokenString string) (jwt.Claims, error)
 }
 
 type authService struct {
@@ -135,7 +154,8 @@ func (s *authService) generateOTP() (string, error) {
 
 func (s *authService) generateTokenPair(ctx context.Context, userId string) (*DTOAuthResponse, error) {
 	key := os.Getenv("JWT_PRIVATE_KEY")
-	tokenId := rand.Text()
+	accessJti := rand.Text()
+	refreshJti := rand.Text()
 	issuer := os.Getenv("JWT_ISSUER")
 	subject := userId
 	accessTokenExp := time.Now().Add(time.Second * time.Duration(ACCESS_TOKEN_EXPIRES_IN)).Unix()
@@ -162,7 +182,7 @@ func (s *authService) generateTokenPair(ctx context.Context, userId string) (*DT
 
 	t := jwt.NewWithClaims(jwt.SigningMethodES256,
 		jwt.MapClaims{
-			"jti":         tokenId,
+			"jti":         accessJti,
 			"iss":         issuer,
 			"sub":         subject,
 			"exp":         accessTokenExp,
@@ -178,7 +198,7 @@ func (s *authService) generateTokenPair(ctx context.Context, userId string) (*DT
 	}
 
 	rt := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-		"jti": tokenId,
+		"jti": refreshJti,
 		"iss": issuer,
 		"sub": subject,
 		"exp": refreshTokenExp,
@@ -188,6 +208,10 @@ func (s *authService) generateTokenPair(ctx context.Context, userId string) (*DT
 
 	refreshToken, err := rt.SignedString(privateKey)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := s.cache.Set(ctx, refreshTokenKey(refreshJti), subject, time.Duration(REFRESH_TOKEN_EXPIRES_IN)*time.Second); err != nil {
 		return nil, err
 	}
 
@@ -263,6 +287,71 @@ func (s *authService) Login(ctx context.Context, req *DTOLoginRequest) (*DTOAuth
 	}
 
 	return tokenPair, nil
+}
+
+func (s *authService) Logout(ctx context.Context, refreshToken string) error {
+	if refreshToken == "" {
+		return nil
+	}
+
+	claims, err := s.VerifyRefreshToken(refreshToken)
+	if err != nil {
+		// An invalid or expired token is already unusable; treat logout as done.
+		return nil
+	}
+
+	jti := tokenID(claims)
+	if jti == "" {
+		return nil
+	}
+
+	if err := s.cache.Del(ctx, refreshTokenKey(jti)); err != nil {
+		return service_error.NewInternalServerError(ctx, "failed to revoke refresh token", err)
+	}
+
+	return nil
+}
+
+func (s *authService) Refresh(ctx context.Context, refreshToken string) (*DTOAuthResponse, error) {
+	claims, err := s.VerifyRefreshToken(refreshToken)
+	if err != nil {
+		return nil, service_error.NewUnauthorized(ctx, "invalid or expired refresh token", err)
+	}
+
+	subject, err := claims.GetSubject()
+	if err != nil || subject == "" {
+		return nil, service_error.NewUnauthorized(ctx, "invalid refresh token", err)
+	}
+
+	jti := tokenID(claims)
+	if jti == "" {
+		return nil, service_error.NewUnauthorized(ctx, "invalid refresh token", nil)
+	}
+
+	// The token must still be tracked in the cache. A missing entry means it was
+	// revoked (logout) or already rotated (possible replay), so reject it.
+	storedSubject, err := s.cache.Get(ctx, refreshTokenKey(jti))
+	if err != nil || storedSubject != subject {
+		return nil, service_error.NewUnauthorized(ctx, "invalid or expired refresh token", err)
+	}
+
+	uid, err := uuid.Parse(subject)
+	if err != nil {
+		return nil, service_error.NewUnauthorized(ctx, "invalid refresh token", err)
+	}
+
+	db := s.db.WithContext(ctx)
+	user, err := s.userService.GetUserById(db, uid)
+	if err != nil || !user.IsActive || !user.IsVerified {
+		return nil, service_error.NewUnauthorized(ctx, "invalid refresh token", err)
+	}
+
+	// Rotate: invalidate the presented token before issuing a new pair.
+	if err := s.cache.Del(ctx, refreshTokenKey(jti)); err != nil {
+		return nil, service_error.NewInternalServerError(ctx, "failed to rotate refresh token", err)
+	}
+
+	return s.generateTokenPair(ctx, subject)
 }
 
 func (s *authService) Register(ctx context.Context, req *DTORegisterRequest) error {
@@ -341,6 +430,16 @@ func (s *authService) sendEmailVerification(ctx context.Context, email, token st
 }
 
 func (s *authService) VerifyAccessToken(tokenString string) (jwt.Claims, error) {
+	return s.verifyToken(tokenString, "at+jwt")
+}
+
+func (s *authService) VerifyRefreshToken(tokenString string) (jwt.Claims, error) {
+	return s.verifyToken(tokenString, "refresh+jwt")
+}
+
+// verifyToken parses and validates a JWT, rejecting unexpected algorithms and
+// token types.
+func (s *authService) verifyToken(tokenString string, expectedType string) (jwt.Claims, error) {
 	key := os.Getenv("JWT_PUBLIC_KEY")
 	issuer := os.Getenv("JWT_ISSUER")
 
@@ -353,6 +452,10 @@ func (s *authService) VerifyAccessToken(tokenString string) (jwt.Claims, error) 
 	}
 
 	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodECDSA); !ok {
+			return nil, errors.New("unexpected signing method")
+		}
+
 		publicKey, err := jwt.ParseECPublicKeyFromPEM([]byte(key))
 		if err != nil {
 			return nil, err
@@ -364,11 +467,7 @@ func (s *authService) VerifyAccessToken(tokenString string) (jwt.Claims, error) 
 	}
 
 	tokenType, ok := token.Header["typ"].(string)
-	if !ok {
-		return nil, errors.New("invalid token type")
-	}
-
-	if tokenType != "at+jwt" {
+	if !ok || tokenType != expectedType {
 		return nil, errors.New("invalid token type")
 	}
 

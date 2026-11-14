@@ -2,6 +2,8 @@ package routers
 
 import (
 	"errors"
+	"os"
+	"strings"
 
 	"github.com/alkuinvito/ai-assistant/internal/auth"
 	"github.com/alkuinvito/ai-assistant/internal/invoices"
@@ -69,7 +71,20 @@ func (r *Router) Handle() *fiber.App {
 	})
 
 	// Middlewares
-	app.Use(cors.New())
+	if allowedOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); allowedOrigins != "" {
+		origins := strings.Split(allowedOrigins, ",")
+		for i := range origins {
+			origins[i] = strings.TrimSpace(origins[i])
+		}
+
+		app.Use(cors.New(cors.Config{
+			AllowOrigins:     origins,
+			AllowCredentials: true,
+			AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Client-ID"},
+		}))
+	} else {
+		app.Use(cors.New())
+	}
 	app.Use(r.middlewares.RequestId())
 	app.Use(r.middlewares.Logger())
 	app.Use(recoverer.New())
