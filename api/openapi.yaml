@@ -149,6 +149,76 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/auth/logout:
+    post:
+      operationId: authLogout
+      summary: Log out and revoke the refresh token
+      description: |
+        For web clients the refresh token is read from the `aa.refresh_token`
+        HttpOnly cookie and cleared. For app clients, send `refresh_token` in
+        the JSON body.
+      tags: [Auth]
+      security:
+        - ClientId: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTOLogoutRequest"
+            example:
+              refresh_token: eyJhbGciOiJFUzI1NiJ9...
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data: logged out successfully
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/auth/refresh:
+    post:
+      operationId: authRefresh
+      summary: Rotate the refresh token and issue a new token pair
+      description: |
+        Web clients send no body; the refresh token is read from the
+        `aa.refresh_token` HttpOnly cookie and the rotated token is set back as
+        a cookie. App clients send `refresh_token` in the JSON body.
+
+        The presented refresh token is invalidated (rotation). Reusing an old
+        token returns 401.
+      tags: [Auth]
+      security:
+        - ClientId: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DTORefreshRequest"
+            example:
+              refresh_token: eyJhbGciOiJFUzI1NiJ9...
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                data:
+                  access_token: eyJhbGciOiJFUzI1NiJ9...
+                  refresh_token: eyJhbGciOiJFUzI1NiJ9...
+                  expires_in: 300
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   # ── Invoices ────────────────────────────────────────────────────
   /api/invoices/upload:
     post:
@@ -835,6 +905,21 @@ components:
           minLength: 8
           maxLength: 32
           example: mypassword123
+
+    DTOLogoutRequest:
+      type: object
+      properties:
+        refresh_token:
+          type: string
+          description: Required for app clients; ignored for web clients that use the cookie.
+
+    DTORefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          description: Required for app clients; ignored for web clients that use the cookie.
 
     DTORegisterRequest:
       type: object
